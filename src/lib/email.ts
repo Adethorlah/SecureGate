@@ -1,0 +1,99 @@
+import { Resend } from "resend"
+
+const resend = new Resend(process.env.RESEND_API_KEY ?? "")
+
+type SendVerificationEmailProps = {
+  email: string
+  name: string
+  token: string
+}
+
+type SendPasswordResetEmailProps = {
+  email: string
+  name: string
+  token: string
+}
+
+export async function sendVerificationEmail({
+  email,
+  name,
+  token,
+}: SendVerificationEmailProps) {
+  const verificationUrl = `${process.env.NEXTAUTH_URL}/verify-email?token=${token}`
+
+  try {
+    await resend.emails.send({
+      from: "SecureGate <noreply@securegate.app>",
+      to: email,
+      subject: "Verify your email address",
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: system-ui, sans-serif; padding: 2rem; max-width: 480px; margin: 0 auto;">
+            <h1 style="font-size: 1.25rem; margin-bottom: 0.5rem;">SecureGate</h1>
+            <p style="color: #6b7280; margin-bottom: 1.5rem;">Hi ${name},</p>
+            <p style="margin-bottom: 1.5rem;">
+              Please verify your email address by clicking the link below.
+            </p>
+            <a
+              href="${verificationUrl}"
+              style="display: inline-block; background-color: #2563eb; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; font-weight: 500;"
+            >
+              Verify email
+            </a>
+            <p style="color: #6b7280; font-size: 0.875rem; margin-top: 1.5rem;">
+              This link expires in 15 minutes.
+            </p>
+            <p style="color: #9ca3af; font-size: 0.75rem; margin-top: 1rem;">
+              If you did not create an account, you can safely ignore this email.
+            </p>
+          </body>
+        </html>
+      `,
+    })
+  } catch (error) {
+    console.error("Failed to send verification email:", error)
+  }
+}
+
+export async function sendPasswordResetEmail({
+  email,
+  name,
+  token,
+}: SendPasswordResetEmailProps) {
+  const resetUrl = `${process.env.NEXTAUTH_URL}/reset-password?token=${token}`
+
+  try {
+    await resend.emails.send({
+      from: "SecureGate <noreply@securegate.app>",
+      to: email,
+      subject: "Reset your password",
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: system-ui, sans-serif; padding: 2rem; max-width: 480px; margin: 0 auto;">
+            <h1 style="font-size: 1.25rem; margin-bottom: 0.5rem;">SecureGate</h1>
+            <p style="color: #6b7280; margin-bottom: 1.5rem;">Hi ${name},</p>
+            <p style="margin-bottom: 1.5rem;">
+              A password reset was requested for your account. Click the link below to set a new password.
+            </p>
+            <a
+              href="${resetUrl}"
+              style="display: inline-block; background-color: #2563eb; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; font-weight: 500;"
+            >
+              Reset password
+            </a>
+            <p style="color: #6b7280; font-size: 0.875rem; margin-top: 1.5rem;">
+              This link expires in 1 hour.
+            </p>
+            <p style="color: #9ca3af; font-size: 0.75rem; margin-top: 1rem;">
+              If you did not request this, you can safely ignore this email.
+            </p>
+          </body>
+        </html>
+      `,
+    })
+  } catch (error) {
+    console.error("Failed to send password reset email:", error)
+  }
+}
