@@ -1,5 +1,7 @@
+import crypto from "node:crypto"
+
 export function generateToken(): string {
-  return crypto.randomUUID()
+  return crypto.randomBytes(32).toString("hex")
 }
 
 export function createExpiry(minutes: number): Date {
