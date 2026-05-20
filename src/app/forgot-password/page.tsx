@@ -6,28 +6,40 @@ import { PageCenter } from "@/components/layout/PageCenter"
 import { AuthForm } from "@/components/auth/AuthForm"
 import { Input } from "@/components/ui/Input"
 import { Button } from "@/components/ui/Button"
-import { Alert } from "@/components/ui/Alert"
-import { forgotPassword } from "@/actions/forgot-password"
+import { useToast } from "@/components/ui/ToastProvider"
 
 export default function ForgotPasswordPage() {
+  const { showToast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const [sent, setSent] = useState(false)
-  const [error, setError] = useState<string>()
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setIsLoading(true)
-    setError(undefined)
 
     const formData = new FormData(e.currentTarget)
-    const result = await forgotPassword(formData)
+    const email = formData.get("email")
 
-    if (result.error) {
-      setError(result.error)
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      })
+      const result = await res.json()
+
+      if (result.error) {
+        showToast(result.error, "error")
+        setIsLoading(false)
+        return
+      }
+    } catch {
+      showToast("Something went wrong. Please try again later.", "error")
       setIsLoading(false)
       return
     }
 
+    showToast("If an account exists for this email, a reset link has been sent.", "success")
     setSent(true)
     setIsLoading(false)
   }
@@ -44,9 +56,7 @@ export default function ForgotPasswordPage() {
             </Link>
           }
         >
-          <Alert variant="success">
-            If an account exists for this email, a reset link has been sent.
-          </Alert>
+          <div />
         </AuthForm>
       </PageCenter>
     )
@@ -72,7 +82,6 @@ export default function ForgotPasswordPage() {
             isLoading={isLoading}
             required
           />
-          {error && <Alert variant="error">{error}</Alert>}
           <Button type="submit" isLoading={isLoading}>
             Send reset link
           </Button>

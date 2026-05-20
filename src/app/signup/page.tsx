@@ -1,38 +1,109 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { PageCenter } from "@/components/layout/PageCenter"
 import { AuthForm } from "@/components/auth/AuthForm"
 import { Input } from "@/components/ui/Input"
 import { PasswordInput } from "@/components/ui/PasswordInput"
 import { Button } from "@/components/ui/Button"
-import { Alert } from "@/components/ui/Alert"
 import { PasswordStrengthIndicator } from "@/components/auth/PasswordStrengthIndicator"
-import { signup } from "@/actions/signup"
+import { useToast } from "@/components/ui/ToastProvider"
 
 export default function SignupPage() {
-  const router = useRouter()
+  const { showToast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string>()
   const [password, setPassword] = useState("")
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
+  const [created, setCreated] = useState(false)
+  const [createdEmail, setCreatedEmail] = useState("")
+  const [resending, setResending] = useState(false)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setIsLoading(true)
-    setError(undefined)
 
-    const formData = new FormData(e.currentTarget)
-    const result = await signup(formData)
+    const body = { name, email, password }
 
-    if (result.error) {
-      setError(result.error)
-      setIsLoading(false)
-      return
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+
+      const result = await res.json()
+
+      if (result.error) {
+        showToast(result.error, "error")
+        setIsLoading(false)
+        return
+      }
+
+      setCreatedEmail(email)
+      setCreated(true)
+    } catch {
+      showToast("Something went wrong. Please try again later.", "error")
     }
+    setIsLoading(false)
+  }
 
-    router.push("/verify-email")
+  async function handleResend() {
+    setResending(true)
+    try {
+      const res = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: createdEmail }),
+      })
+      const result = await res.json()
+      if (result.error) {
+        showToast(result.error, "error")
+      } else {
+        showToast("Verification email sent!", "success")
+      }
+    } catch {
+      showToast("Something went wrong. Please try again later.", "error")
+    }
+    setResending(false)
+  }
+
+  if (created) {
+    return (
+      <PageCenter>
+        <AuthForm
+          title="Verify your email"
+          subtitle="Almost done! We sent a verification link to your email. Click the link to activate your account."
+          footer={
+            <Link href="/login" className="text-[var(--color-accent)] hover:underline">
+              Go to sign in
+            </Link>
+          }
+        >
+          <div className="space-y-3 text-sm text-[var(--color-text-secondary)]">
+            <div className="flex items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M22 7l-10 7L2 7" />
+              </svg>
+              <span>Check your inbox and click the verification link. It expires in 15 minutes.</span>
+            </div>
+            <p className="text-center text-sm">
+              Didn&apos;t receive it?{" "}
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resending}
+                className="text-[var(--color-accent)] hover:underline disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {resending ? "Sending..." : "Resend verification email"}
+              </button>
+            </p>
+          </div>
+        </AuthForm>
+      </PageCenter>
+    )
   }
 
   return (
@@ -55,6 +126,8 @@ export default function SignupPage() {
             name="name"
             type="text"
             placeholder="John Doe"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             isLoading={isLoading}
             required
           />
@@ -63,6 +136,8 @@ export default function SignupPage() {
             name="email"
             type="email"
             placeholder="name@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             isLoading={isLoading}
             required
           />
@@ -78,7 +153,6 @@ export default function SignupPage() {
             />
             <PasswordStrengthIndicator password={password} />
           </div>
-          {error && <Alert variant="error">{error}</Alert>}
           <Button type="submit" isLoading={isLoading}>
             Create account
           </Button>

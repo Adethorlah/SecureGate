@@ -3,7 +3,6 @@ type RateLimitConfig = {
   window: number
 }
 
-// In-memory store (replace with Upstash Redis in production)
 const store = new Map<string, { count: number; resetAt: number }>()
 
 export async function rateLimit(
@@ -26,7 +25,6 @@ export async function rateLimit(
   return { allowed: true, remaining: config.limit - entry.count }
 }
 
-// Clean up expired entries periodically
 setInterval(() => {
   const now = Date.now()
   store.forEach((value, key) => {

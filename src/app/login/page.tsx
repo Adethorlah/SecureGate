@@ -9,29 +9,20 @@ import { AuthForm } from "@/components/auth/AuthForm"
 import { Input } from "@/components/ui/Input"
 import { PasswordInput } from "@/components/ui/PasswordInput"
 import { Button } from "@/components/ui/Button"
-import { Alert } from "@/components/ui/Alert"
-import { checkRateLimit } from "@/actions/check-rate-limit"
+import { useToast } from "@/components/ui/ToastProvider"
 
 export default function LoginPage() {
   const router = useRouter()
+  const { showToast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string>()
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setIsLoading(true)
-    setError(undefined)
 
     const formData = new FormData(e.currentTarget)
     const email = formData.get("email") as string
     const password = formData.get("password") as string
-
-    const rateCheck = await checkRateLimit(email)
-    if (rateCheck.error) {
-      setError(rateCheck.error)
-      setIsLoading(false)
-      return
-    }
 
     const result = await signIn("credentials", {
       email,
@@ -40,7 +31,14 @@ export default function LoginPage() {
     })
 
     if (!result?.ok) {
-      setError("Invalid email or password")
+      const error = result?.error
+      if (error === "EMAIL_NOT_VERIFIED") {
+        showToast("Please verify your email before logging in.", "error")
+      } else if (error === "TOO_MANY_REQUESTS") {
+        showToast("Too many login attempts. Try again in 10 minutes.", "error")
+      } else {
+        showToast("Invalid email or password.", "error")
+      }
       setIsLoading(false)
       return
     }
@@ -89,7 +87,6 @@ export default function LoginPage() {
               </Link>
             </div>
           </div>
-          {error && <Alert variant="error">{error}</Alert>}
           <Button type="submit" isLoading={isLoading}>
             Sign in
           </Button>

@@ -2,6 +2,17 @@ import { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/prisma"
+import { rateLimit } from "@/lib/rate-limit"
+
+function getIp(req: any): string | undefined {
+  if (!req?.headers) return undefined
+  const h = req.headers as Record<string, string | string[] | undefined>
+  const fwd = h["x-forwarded-for"]
+  if (fwd) return (Array.isArray(fwd) ? fwd[0] : fwd).split(",")[0].trim()
+  const real = h["x-real-ip"]
+  if (real) return Array.isArray(real) ? real[0] : real
+  return undefined
+}
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -11,9 +22,20 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) {
-          return null
+          throw new Error("INVALID_CREDENTIALS")
+        }
+
+        const ip = getIp(req) ?? "unknown"
+
+        const { allowed } = await rateLimit(`login:${ip}`, {
+          limit: 5,
+          window: 600,
+        })
+
+        if (!allowed) {
+          throw new Error("TOO_MANY_REQUESTS")
         }
 
         const user = await prisma.user.findUnique({
@@ -22,22 +44,26 @@ export const authOptions: NextAuthOptions = {
             id: true,
             name: true,
             email: true,
-            hashedPassword: true,
+            passwordHash: true,
             emailVerified: true,
           },
         })
 
         if (!user) {
-          return null
+          throw new Error("INVALID_CREDENTIALS")
         }
 
         const isValid = await bcrypt.compare(
           credentials.password,
-          user.hashedPassword
+          user.passwordHash
         )
 
         if (!isValid) {
-          return null
+          throw new Error("INVALID_CREDENTIALS")
+        }
+
+        if (!user.emailVerified) {
+          throw new Error("EMAIL_NOT_VERIFIED")
         }
 
         return {
@@ -51,7 +77,7 @@ export const authOptions: NextAuthOptions = {
   ],
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60, // 24 hours
+    maxAge: 24 * 60 * 60,
   },
   pages: {
     signIn: "/login",

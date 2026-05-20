@@ -7,17 +7,16 @@ import { PageCenter } from "@/components/layout/PageCenter"
 import { AuthForm } from "@/components/auth/AuthForm"
 import { PasswordInput } from "@/components/ui/PasswordInput"
 import { Button } from "@/components/ui/Button"
-import { Alert } from "@/components/ui/Alert"
 import { PasswordStrengthIndicator } from "@/components/auth/PasswordStrengthIndicator"
-import { resetPassword } from "@/actions/reset-password"
+import { useToast } from "@/components/ui/ToastProvider"
 
 function ResetPasswordContent() {
   const router = useRouter()
+  const { showToast } = useToast()
   const searchParams = useSearchParams()
   const token = searchParams.get("token")
 
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string>()
   const [password, setPassword] = useState("")
 
   if (!token) {
@@ -31,9 +30,7 @@ function ResetPasswordContent() {
           </Link>
         }
       >
-        <Alert variant="error">
-          This password reset link is invalid or has expired. Please request a new one.
-        </Alert>
+        <div />
       </AuthForm>
     )
   }
@@ -41,19 +38,30 @@ function ResetPasswordContent() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setIsLoading(true)
-    setError(undefined)
 
     const formData = new FormData(e.currentTarget)
-    formData.set("token", token as string)
-    const result = await resetPassword(formData)
+    const passwordValue = formData.get("password")
 
-    if (result.error) {
-      setError(result.error)
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, password: passwordValue }),
+      })
+      const result = await res.json()
+
+      if (result.error) {
+        showToast(result.error, "error")
+        setIsLoading(false)
+        return
+      }
+
+      showToast("Password reset successfully! You can now sign in.", "success")
+      setTimeout(() => router.push("/login"), 1500)
+    } catch {
+      showToast("Something went wrong. Please try again later.", "error")
       setIsLoading(false)
-      return
     }
-
-    router.push("/login")
   }
 
   return (
@@ -79,7 +87,6 @@ function ResetPasswordContent() {
           />
           <PasswordStrengthIndicator password={password} />
         </div>
-        {error && <Alert variant="error">{error}</Alert>}
         <Button type="submit" isLoading={isLoading}>
           Reset password
         </Button>
