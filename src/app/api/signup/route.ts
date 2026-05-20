@@ -49,13 +49,13 @@ export async function POST(req: Request) {
 
     // If user does not exist → create it
     if (!user) {
-      const hashedPassword = await bcrypt.hash(password, 12)
+      const passwordHash = await bcrypt.hash(password, 12)
 
       user = await prisma.user.create({
         data: {
           name,
           email,
-          hashedPassword,
+          hashedPassword: passwordHash,
         },
       })
     }

@@ -14,11 +14,6 @@ export const signupSchema = z.object({
   password: passwordRule,
 })
 
-export const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(1, "Password is required"),
-})
-
 export const forgotPasswordSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
 })
