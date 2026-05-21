@@ -10,6 +10,7 @@ export function Button({
   isLoading,
   variant = "primary",
   children,
+  className,
   ...props
 }: ButtonProps) {
   const base =
@@ -26,7 +27,7 @@ export function Button({
 
   return (
     <button
-      className={`${base} ${variants[variant]} disabled:cursor-not-allowed disabled:opacity-50 w-full flex items-center justify-center`}
+      className={`${base} ${variants[variant]} disabled:cursor-not-allowed disabled:opacity-50 w-full flex items-center justify-center ${className ?? ""}`}
       disabled={isLoading || props.disabled}
       {...props}
     >

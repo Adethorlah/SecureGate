@@ -43,6 +43,11 @@ body {
   background-color: var(--color-bg);
 }
 
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
 a {
   color: var(--color-accent);
   text-decoration: none;

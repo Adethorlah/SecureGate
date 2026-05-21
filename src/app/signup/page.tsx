@@ -125,7 +125,7 @@ export default function SignupPage() {
             label="Name"
             name="name"
             type="text"
-            placeholder="John Doe"
+            placeholder="John Smith"
             value={name}
             onChange={(e) => setName(e.target.value)}
             isLoading={isLoading}
@@ -152,8 +152,30 @@ export default function SignupPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
             <PasswordStrengthIndicator password={password} />
+            {password.length > 0 && (
+              <ul className="space-y-1">
+                {!/[A-Z]/.test(password) && (
+                  <li className="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    One uppercase letter
+                  </li>
+                )}
+                {!/[0-9]/.test(password) && (
+                  <li className="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    One number
+                  </li>
+                )}
+                {!/[^A-Za-z0-9]/.test(password) && (
+                  <li className="text-xs text-[var(--color-text-secondary)] flex items-center gap-1">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    One special character
+                  </li>
+                )}
+              </ul>
+            )}
           </div>
-          <Button type="submit" isLoading={isLoading}>
+          <Button type="submit" isLoading={isLoading} className={(!name || !email || !password) ? "cursor-not-allowed" : ""}>
             Create account
           </Button>
         </form>
