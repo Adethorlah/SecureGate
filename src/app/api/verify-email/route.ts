@@ -4,8 +4,7 @@ import { verifyEmailSchema } from "@/lib/validation"
 
 export async function GET(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url)
-    const token = searchParams.get("token")
+    const token = req.nextUrl.searchParams.get("token")
 
     const parsed = verifyEmailSchema.safeParse({ token })
 

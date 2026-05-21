@@ -26,7 +26,7 @@ export function Button({
 
   return (
     <button
-      className={`${base} ${variants[variant]} disabled:cursor-not-allowed disabled:opacity-50 w-full`}
+      className={`${base} ${variants[variant]} disabled:cursor-not-allowed disabled:opacity-50 w-full flex items-center justify-center`}
       disabled={isLoading || props.disabled}
       {...props}
     >

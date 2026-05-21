@@ -4,10 +4,8 @@ import { PageCenter } from "@/components/layout/PageCenter"
 import { Button } from "@/components/ui/Button"
 
 export default function Error({
-  error,
   reset,
 }: {
-  error: Error & { digest?: string }
   reset: () => void
 }) {
   return (
