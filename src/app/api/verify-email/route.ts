@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { verifyEmailSchema } from "@/lib/validation"
 
+export const dynamic = "force-dynamic"
+
 export async function GET(req: NextRequest) {
   try {
     const token = req.nextUrl.searchParams.get("token")
