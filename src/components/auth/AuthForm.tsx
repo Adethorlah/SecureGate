@@ -1,5 +1,4 @@
 import { Card } from "@/components/ui/Card"
-import Link from "next/link"
 
 type AuthFormProps = {
   title: string

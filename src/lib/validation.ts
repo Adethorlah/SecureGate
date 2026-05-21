@@ -27,6 +27,11 @@ export const verifyEmailSchema = z.object({
   token: z.string().min(1, "Token is required"),
 })
 
+export const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(1, "Password is required"),
+})
+
 export const emailSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
 })

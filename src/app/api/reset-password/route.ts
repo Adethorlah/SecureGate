@@ -22,14 +22,20 @@ export async function POST(req: NextRequest) {
     })
 
     if (!storedToken) {
-      return NextResponse.json({ status: "INVALID_TOKEN" }, { status: 400 })
+      return NextResponse.json(
+        { error: "This reset link is invalid or has expired." },
+        { status: 400 }
+      )
     }
 
     if (storedToken.expiresAt < new Date()) {
       await prisma.passwordResetToken.delete({
         where: { id: storedToken.id },
       })
-      return NextResponse.json({ status: "TOKEN_EXPIRED" }, { status: 400 })
+      return NextResponse.json(
+        { error: "This reset link has expired." },
+        { status: 400 }
+      )
     }
 
     const passwordHash = await bcrypt.hash(password, 12)

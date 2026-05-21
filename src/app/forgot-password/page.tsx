@@ -21,7 +21,7 @@ export default function ForgotPasswordPage() {
     const email = formData.get("email")
 
     try {
-      const res = await fetch("/api/auth/forgot-password", {
+      const res = await fetch("/api/forgot-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),

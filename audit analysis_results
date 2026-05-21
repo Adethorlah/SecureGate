@@ -1,0 +1,352 @@
+# SecureGate — Full Codebase Investigation Report
+
+> [!IMPORTANT]
+> This report covers **every file** in the repository. Issues are ranked by severity: 🔴 Critical, 🟠 High, 🟡 Medium, 🔵 Low.
+
+---
+
+## Executive Summary
+
+The SecureGate codebase is a functional authentication app with the right structural intent, but it has **several critical security vulnerabilities, configuration problems, and code defects** that would fail a security-focused engineering assessment. The most urgent issues are: **exposed secrets in `.env` (committed to git)**, a **corrupted `.next` build cache** causing 404s, a **weak token generation** approach, **missing `NEXTAUTH_SECRET`** in the primary `.env`, and an **in-memory rate limiter** that won't work in production.
+
+---
+
+## 🔴 Critical Issues
+
+### 1. Secrets Exposed — `.env` Committed to Repository
+**Files:** [.env](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/.env), [.env.local](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/.env.local)
+
+Both `.env` and `.env.local` contain **real credentials** (database URLs with passwords, Resend API keys, NextAuth secrets). While `.gitignore` lists them, the fact that they **exist on disk with live credentials** is a problem. Critically:
+
+- `.env` contains the **Neon database password** in plain text: `npg_cpZzIqx7oCh5`
+- `.env.local` contains a **Supabase database password**: `Semilore.2483`
+- The `RESEND_API_KEY` is exposed in both files
+- The `NEXTAUTH_SECRET` in `.env.local` is a **weak, predictable string**: `"super-secret-key-that-is-at-least-32-characters-long"`
+
+> [!CAUTION]
+> If this repo has ever been pushed to a public or shared remote, **all these credentials are compromised** and must be rotated immediately.
+
+**Fix:** Generate a cryptographically random `NEXTAUTH_SECRET` (e.g. `openssl rand -base64 32`). Rotate all exposed credentials. Verify `.env` and `.env.local` are **never** tracked in git history.
+
+---
+
+### 2. `NEXTAUTH_SECRET` Missing from `.env`
+**File:** [.env](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/.env)
+
+The primary `.env` file has **no `NEXTAUTH_SECRET` or `NEXTAUTH_URL`**. Only `.env.local` has them. In production (Vercel), environment variables come from the dashboard, not `.env.local`. If someone deploys using only `.env`, NextAuth will fail silently or use an insecure default.
+
+**Fix:** Ensure `NEXTAUTH_SECRET` and `NEXTAUTH_URL` are set in the Vercel environment. Document this clearly.
+
+---
+
+### 3. Weak Token Generation — `crypto.randomUUID()` Instead of `crypto.randomBytes()`
+**File:** [token.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/lib/token.ts)
+
+```typescript
+export function generateToken(): string {
+  return crypto.randomUUID()  // ❌ Only 122 bits of entropy, predictable format
+}
+```
+
+The AGENTS.md **explicitly requires** `crypto.randomBytes()` for verification and password reset tokens. `randomUUID()` produces a v4 UUID which, while random, has a predictable format (dashes, version nibble) and only 122 bits of randomness. The dev log also shows tokens that look like hex strings (64 chars), suggesting the code was previously using `randomBytes` but was changed.
+
+**Fix:**
+```typescript
+import crypto from "crypto"
+export function generateToken(): string {
+  return crypto.randomBytes(32).toString("hex")
+}
+```
+
+---
+
+### 4. Corrupted `.next` Cache — Causing Repeated 404 Errors
+**File:** [dev.log](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/dev.log)
+
+The dev log is **flooded** with errors like:
+```
+Caching failed for pack: Error: ENOENT: no such file or directory,
+lstat 'C:\Users\DELL LATITUDE\Desktop\SecureGate\.next\server\app\api'
+```
+
+And many routes returning `404`:
+```
+GET /login 404
+GET /_next/static/chunks/main-app.js 404
+GET /_next/static/chunks/app-pages-internals.js 404
+```
+
+This indicates a **corrupted `.next` build cache**, likely from the path having a space in `DELL LATITUDE`. The webpack cache repeatedly fails and routes intermittently return 404.
+
+**Fix:** Delete the `.next` directory and restart the dev server:
+```bash
+rm -rf .next
+npm run dev
+```
+
+---
+
+### 5. Two Conflicting Database URLs
+**Files:** [.env](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/.env) → Neon, [.env.local](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/.env.local) → Supabase
+
+`.env` points to a **Neon** database, `.env.local` points to a **Supabase** database. Next.js loads `.env.local` with higher priority, so locally Supabase is used. But this creates confusion — which database has the actual schema/data? If the Prisma migrations were run against one but the app connects to the other, you'll get runtime errors.
+
+**Fix:** Pick one database. Remove the other `DATABASE_URL`. Ensure migrations are run against the active database.
+
+---
+
+## 🟠 High Issues
+
+### 6. In-Memory Rate Limiter — Useless in Production (Serverless)
+**File:** [rate-limit.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/lib/rate-limit.ts)
+
+```typescript
+const store = new Map<string, { count: number; resetAt: number }>()
+```
+
+The rate limiter uses an **in-memory `Map`**. On Vercel (serverless), each function invocation gets a fresh memory space. The rate limit counter resets on every cold start, making it **completely ineffective** against brute-force attacks.
+
+Additionally, the `setInterval` cleanup at line 28 will **leak in serverless** — it keeps the function alive and can cause unexpected behavior.
+
+The `.env` files have **empty** `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, suggesting the intent was to use Upstash Redis but it was never configured.
+
+**Fix:** Implement rate limiting with Upstash Redis using `@upstash/ratelimit`, or at minimum document that the in-memory approach is dev-only.
+
+---
+
+### 7. Middleware Too Minimal — Doesn't Check Email Verification
+**File:** [middleware.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/middleware.ts)
+
+```typescript
+import { withAuth } from "next-auth/middleware"
+export default withAuth
+export const config = { matcher: ["/dashboard/:path*"] }
+```
+
+This only checks if the user is **authenticated**, but **not** if their email is **verified**. The AGENTS.md requires:
+- Authenticated but unverified → redirect to `/verify-email`
+- Unauthenticated → redirect to `/login`
+
+The dashboard page ([page.tsx](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/app/dashboard/page.tsx)) does check `emailVerified` server-side, which is good as a backup. But the middleware should be the **first line of defense** per the spec. A request to `/dashboard/api/something` (if it existed) would bypass the page-level check.
+
+**Fix:** Add a custom `withAuth` callback that checks `token.emailVerified`:
+```typescript
+export default withAuth({
+  callbacks: {
+    authorized({ token }) {
+      return !!token?.emailVerified
+    },
+  },
+})
+```
+
+---
+
+### 8. Signup Silently Succeeds for Existing Users — No Verification Email Resent
+**File:** [signup/route.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/app/api/auth/signup/route.ts#L27-L29)
+
+```typescript
+if (existingUser) {
+  return NextResponse.json({ success: true })  // Silent success, no email sent
+}
+```
+
+This correctly avoids leaking whether an email exists (good security), but creates a **UX dead end**: if a user tries to re-register with an unverified email, they get `{ success: true }` and are told to check their email — but **no verification email is actually sent**. They're stuck.
+
+**Fix:** If `existingUser` exists and `!existingUser.emailVerified`, generate a new token and resend the verification email before returning success.
+
+---
+
+### 9. `react-jsx` in tsconfig.json — Potential Conflict with Next.js
+**File:** [tsconfig.json](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/tsconfig.json#L17)
+
+```json
+"jsx": "react-jsx"
+```
+
+Next.js normally uses `"jsx": "preserve"` so that SWC/Babel handles JSX transformation. Setting `"react-jsx"` can cause compilation issues, especially with React Server Components. This may be contributing to the build/caching errors seen in the dev log.
+
+**Fix:** Change to `"jsx": "preserve"`.
+
+---
+
+### 10. No Login Validation Schema — Missing Server-Side Zod Validation
+**File:** [auth.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/lib/auth.ts#L25-L28)
+
+The login `authorize` function checks `!credentials?.email || !credentials?.password` but doesn't use Zod for validation. Every other endpoint uses Zod. The AGENTS.md says: *"Use Zod for server-side validation"* and *"Always validate request body"*.
+
+**Fix:** Create a `loginSchema` in `validation.ts` and use it in `authorize`.
+
+---
+
+## 🟡 Medium Issues
+
+### 11. API Routes Under `/api/auth/` Conflict with NextAuth
+**Files:** All API routes under `src/app/api/auth/`
+
+NextAuth uses the `/api/auth/*` namespace for its own routes (`/api/auth/signin`, `/api/auth/callback`, etc.). Placing custom routes like `/api/auth/signup`, `/api/auth/forgot-password` in the same namespace works but creates a **collision risk**. If NextAuth adds a route matching one of your custom names in a future version, it will silently break.
+
+**Fix:** Consider moving custom auth routes to `/api/signup`, `/api/forgot-password`, etc. (outside the NextAuth namespace). Low risk currently, but worth noting.
+
+---
+
+### 12. Password Strength Indicator Has a Logic Gap
+**File:** [PasswordStrengthIndicator.tsx](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/components/auth/PasswordStrengthIndicator.tsx#L12-L21)
+
+```typescript
+if (password.length < 8 || typeCount <= 1) return { level: "weak" }
+if (password.length >= 8 && typeCount >= 2 && password.length < 12) return { level: "fair" }
+if (password.length >= 12 && typeCount >= 3) return { level: "strong" }
+return { level: "weak" }  // Catches: length >= 12 with typeCount === 2
+```
+
+A password like `"AbcdefghijklABCD"` (16 chars, 2 types: upper + lower) falls through all conditions and returns "weak" — but it arguably meets "fair" criteria. The logic has gaps.
+
+**Fix:** Make the conditions exhaustive or use a scoring system.
+
+---
+
+### 13. Forgot Password Rate Limit Inconsistent with Spec
+**File:** [forgot-password/route.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/app/api/auth/forgot-password/route.ts#L24-L27)
+
+```typescript
+const { allowed } = await rateLimit(`forgot-password:${ip}`, {
+  limit: 3,      // ← Spec says 5 attempts
+  window: 3600,  // ← Spec says 10 minutes (600s), this is 1 hour
+})
+```
+
+AGENTS.md specifies: *"5 attempts max, 10 minute window"*. The forgot-password route uses 3 attempts over 1 hour — stricter than spec. While more secure, it deviates from the documented requirements.
+
+---
+
+### 14. `AuthForm` Imports `Link` but Never Uses It
+**File:** [AuthForm.tsx](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/components/auth/AuthForm.tsx#L2)
+
+```typescript
+import Link from "next/link"  // ← Unused import
+```
+
+Dead code. Will cause lint warnings.
+
+---
+
+### 15. Reset Password API Returns Inconsistent Error Shape
+**File:** [reset-password/route.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/app/api/auth/reset-password/route.ts)
+
+- On invalid/expired token: returns `{ status: "INVALID_TOKEN" }` (no `error` field)
+- On server error: returns `{ error: "Something went wrong..." }`
+
+The client-side code in [reset-password/page.tsx](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/app/reset-password/page.tsx#L53) checks `result.error`, so when the API returns `{ status: "INVALID_TOKEN" }`, the client **doesn't show any error toast** — it silently does nothing.
+
+**Fix:** Standardize the API response shape. Always include an `error` field for error cases.
+
+---
+
+### 16. Forgot Password Swallows Server Errors
+**File:** [forgot-password/route.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/app/api/auth/forgot-password/route.ts#L69-L72)
+
+```typescript
+} catch (error) {
+  console.error("Forgot password error:", error)
+  return NextResponse.json({ success: true })  // ← Swallows the error
+}
+```
+
+On a server error (e.g., database down), the API returns `{ success: true }`, making debugging impossible from the client side. While this avoids leaking info, a generic error response with a 500 status would be more appropriate.
+
+---
+
+## 🔵 Low Issues
+
+### 17. `next-auth` v4 on Next.js 14 — Works but Legacy
+**File:** [package.json](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/package.json)
+
+`next-auth@^4.24.0` with `next@^16.2.6` — Next.js 14 works with NextAuth v4, but Auth.js v5 (NextAuth v5) is the recommended version for the App Router. The AGENTS.md mentions "NextAuth/Auth.js" — consider whether v5 was intended.
+
+> [!NOTE]
+> Actually, the package.json says `next@^16.2.6` but the dev log shows `Next.js 14.2.35`. The installed version resolved to 14.x but the declared range `^16.2.6` is unusual. This suggests the version was bumped incorrectly or is a typo.
+
+---
+
+### 18. Resend Email Configuration — Testing-Only Domain
+**File:** [email.ts](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/src/lib/email.ts#L28)
+
+```typescript
+from: "SecureGate <onboarding@resend.dev>"
+```
+
+Using `@resend.dev` limits sending to only the account owner's email. The dev log confirms this with a `403` error. For production, a verified domain must be configured.
+
+---
+
+### 19. Missing `actions/` Directory
+The AGENTS.md folder structure guidance mentions `src/actions/` and `src/emails/` directories, but neither exists. Not a bug, but a deviation from the documented structure.
+
+---
+
+### 20. `dev.log` — 152KB of Logs Committed
+**File:** [dev.log](file:///c:/Users/DELL%20LATITUDE/Desktop/SecureGate/dev.log) (152,300 bytes)
+
+This file should be in `.gitignore`. It contains build output, token URLs, and error details that shouldn't be in the repository.
+
+---
+
+## Summary Table
+
+| # | Severity | Issue | File(s) |
+|---|----------|-------|---------|
+| 1 | 🔴 Critical | Secrets exposed in `.env` files | `.env`, `.env.local` |
+| 2 | 🔴 Critical | Missing `NEXTAUTH_SECRET` in `.env` | `.env` |
+| 3 | 🔴 Critical | Weak token generation (UUID vs randomBytes) | `token.ts` |
+| 4 | 🔴 Critical | Corrupted `.next` cache causing 404s | `.next/`, `dev.log` |
+| 5 | 🔴 Critical | Two conflicting database URLs | `.env`, `.env.local` |
+| 6 | 🟠 High | In-memory rate limiter (serverless-incompatible) | `rate-limit.ts` |
+| 7 | 🟠 High | Middleware doesn't check email verification | `middleware.ts` |
+| 8 | 🟠 High | Signup silent success for unverified existing users | `signup/route.ts` |
+| 9 | 🟠 High | `react-jsx` in tsconfig (should be `preserve`) | `tsconfig.json` |
+| 10 | 🟠 High | No Zod validation on login | `auth.ts` |
+| 11 | 🟡 Medium | Custom routes in NextAuth namespace | `api/auth/*` |
+| 12 | 🟡 Medium | Password strength logic gaps | `PasswordStrengthIndicator.tsx` |
+| 13 | 🟡 Medium | Rate limit config doesn't match spec | `forgot-password/route.ts` |
+| 14 | 🟡 Medium | Unused `Link` import | `AuthForm.tsx` |
+| 15 | 🟡 Medium | Inconsistent API error shape | `reset-password/route.ts` |
+| 16 | 🟡 Medium | Forgot password swallows server errors | `forgot-password/route.ts` |
+| 17 | 🔵 Low | NextAuth v4 on Next.js 14 (legacy) | `package.json` |
+| 18 | 🔵 Low | Resend testing-only domain | `email.ts` |
+| 19 | 🔵 Low | Missing `actions/` and `emails/` dirs | Project structure |
+| 20 | 🔵 Low | `dev.log` should be gitignored | `dev.log` |
+
+---
+
+## What's Working Well ✅
+
+Despite the issues above, the codebase does several things right:
+
+- **Clean project structure**: `src/app`, `src/lib`, `src/components`, `src/types` — well-organized
+- **Zod validation** on most endpoints (signup, forgot-password, reset-password, verify-email)
+- **Generic login errors** — doesn't leak whether an email exists (`"Invalid email or password"`)
+- **Verification token single-use** — tokens are deleted after use
+- **Password reset token single-use** — tokens are deleted after password reset
+- **Token expiry** — 15 minutes for verification, 60 minutes for reset
+- **bcrypt with cost 12** — strong password hashing
+- **Security headers** in `next.config.js` (X-Frame-Options, X-Content-Type-Options, Referrer-Policy)
+- **Suspense boundaries** on pages using `useSearchParams` (prevents SSR issues)
+- **Accessible UI** — labels, aria attributes, role="alert"
+- **Toast notification system** — clean implementation
+- **Prisma singleton pattern** — prevents connection leaks in dev
+
+---
+
+## Recommended Priority Order for Fixes
+
+1. **Rotate all exposed secrets** (database passwords, API keys, NEXTAUTH_SECRET)
+2. **Delete `.next` and restart** dev server
+3. **Fix token generation** → `crypto.randomBytes(32).toString("hex")`
+4. **Pick one database** and remove the conflicting URL
+5. **Fix tsconfig.json** → `"jsx": "preserve"`
+6. **Implement Upstash Redis** rate limiting (or clearly mark in-memory as dev-only)
+7. **Enhance middleware** to check email verification
+8. **Fix signup for unverified existing users** — resend verification email
+9. **Standardize API error responses**
+10. **Add `dev.log` to `.gitignore`**

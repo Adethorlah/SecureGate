@@ -16,6 +16,7 @@ function getStrength(password: string): { level: "weak" | "fair" | "strong" } {
   if (password.length < 8 || typeCount <= 1) return { level: "weak" }
   if (password.length >= 8 && typeCount >= 2 && password.length < 12) return { level: "fair" }
   if (password.length >= 12 && typeCount >= 3) return { level: "strong" }
+  if (password.length >= 12 && typeCount === 2) return { level: "fair" }
 
   return { level: "weak" }
 }

@@ -27,7 +27,7 @@ export default function SignupPage() {
     const body = { name, email, password }
 
     try {
-      const res = await fetch("/api/auth/signup", {
+      const res = await fetch("/api/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -52,7 +52,7 @@ export default function SignupPage() {
   async function handleResend() {
     setResending(true)
     try {
-      const res = await fetch("/api/auth/resend-verification", {
+      const res = await fetch("/api/resend-verification", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: createdEmail }),

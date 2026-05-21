@@ -22,8 +22,8 @@ export async function POST(req: NextRequest) {
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown"
 
     const { allowed } = await rateLimit(`forgot-password:${ip}`, {
-      limit: 3,
-      window: 3600,
+      limit: 5,
+      window: 600,
     })
 
     if (!allowed) {
@@ -68,6 +68,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error("Forgot password error:", error)
-    return NextResponse.json({ success: true })
+    return NextResponse.json(
+      { error: "Something went wrong. Please try again later." },
+      { status: 500 }
+    )
   }
 }

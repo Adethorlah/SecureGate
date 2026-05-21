@@ -21,10 +21,29 @@ export async function POST(req: Request) {
 
     const existingUser = await prisma.user.findUnique({
       where: { email },
-      select: { id: true, emailVerified: true },
+      select: { id: true, name: true, email: true, emailVerified: true },
     })
 
     if (existingUser) {
+      if (!existingUser.emailVerified) {
+        await prisma.verificationToken.deleteMany({
+          where: { userId: existingUser.id },
+        })
+
+        const token = generateToken()
+        const expiresAt = createExpiry(15)
+
+        await prisma.verificationToken.create({
+          data: { token, userId: existingUser.id, expiresAt },
+        })
+
+        await sendVerificationEmail({
+          email: existingUser.email,
+          name: existingUser.name ?? "",
+          token,
+        })
+      }
+
       return NextResponse.json({ success: true })
     }
 

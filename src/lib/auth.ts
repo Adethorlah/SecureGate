@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/prisma"
 import { rateLimit } from "@/lib/rate-limit"
+import { loginSchema } from "@/lib/validation"
 
 function getIp(req: any): string | undefined {
   if (!req?.headers) return undefined
@@ -23,10 +24,12 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, req) {
-        if (!credentials?.email || !credentials?.password) {
+        const parsed = loginSchema.safeParse(credentials)
+        if (!parsed.success) {
           throw new Error("INVALID_CREDENTIALS")
         }
 
+        const { email, password } = parsed.data
         const ip = getIp(req) ?? "unknown"
 
         const { allowed } = await rateLimit(`login:${ip}`, {
@@ -39,7 +42,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email },
           select: {
             id: true,
             name: true,
@@ -54,7 +57,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         const isValid = await bcrypt.compare(
-          credentials.password,
+          password,
           user.passwordHash
         )
 
